@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>捕梦网 </title>
+    <title>捕梦网</title>
     <style>
         * { user-select: none; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
         body { background: #0a0f1f; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: monospace; margin: 0; padding: 16px; touch-action: none; }
@@ -47,13 +47,10 @@
         const moonImg = new Image(); moonImg.src = "moon.png";
         const meteorImg = new Image(); meteorImg.src = "meteor.png";
 
-        // 星星碎屑
         let starShards = [];
         function shatterStar(x,y){ for(let i=0;i<24;i++) starShards.push({ x:x+(Math.random()-0.5)*22, y:y+(Math.random()-0.5)*22, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5-1, life:0.7+Math.random()*0.4, size:2+Math.random()*5 }); }
         function updateShards(){ for(let i=0;i<starShards.length;i++){ starShards[i].x+=starShards[i].vx; starShards[i].y+=starShards[i].vy; starShards[i].life-=0.028; if(starShards[i].life<=0){ starShards.splice(i,1); i--; } } }
         function drawShards(){ for(let s of starShards){ ctx.globalAlpha=s.life; ctx.fillStyle=`hsl(48, 100%, 65%)`; ctx.beginPath(); ctx.arc(s.x,s.y,s.size*0.7,0,Math.PI*2); ctx.fill(); } ctx.globalAlpha=1; }
-
-  
 
         let objects = [], lastSpawn=0, globalSpeed=1.0, gameActive=false, paused=false, score=0, timeLeft=45;
         let swipePoints=[], isDragging=false, animId=null, timerInt=null;
@@ -73,8 +70,8 @@
                 x=40+Math.random()*(width-80);
                 y=height+15+Math.random()*30;
                 vx=(Math.random()-0.5)*0.7;
-                vy = -10.5 - Math.random()*3.0;   // 初速度向上更快
-                gravity = 0.18;                  // 重力加速度
+                vy = -10.5 - Math.random()*3.0;
+                gravity = 0.18;
             }
             return { type,x,y,vx,vy,radius:rad,marked:false, gravity, scale:(type==='star'?0.3+Math.random()*0.2:1.0), angle:0, rotSpeed:(type==='star'?0.03:0) };
         }
@@ -88,22 +85,25 @@
                 if(o.type==='star' && o.scale<0.99) o.scale += 0.025;
                 if(o.type==='star') o.angle += o.rotSpeed;
             }
-            // ✅ 修复：只移除超出边界的物体，被标记的星星不移除（让特效播完）
-            objects = objects.filter(o => o.y + o.radius > -100 && o.x + o.radius > -120 && o.x - o.radius < width + 120);
+            // 🔧 修复：移出标记的星星（炸过的），避免后续月亮选到无效目标
+            objects = objects.filter(o => !o.marked && o.y + o.radius > -100 && o.x + o.radius > -120 && o.x - o.radius < width + 120);
         }
 
         function trySpawn(now){ if(!gameActive) return; let delay=500/Math.max(0.65,globalSpeed); if(now-lastSpawn>delay){ objects.push(createRandomObject()); lastSpawn=now; if(objects.length<14 && Math.random()<0.28) objects.push(createRandomObject()); } }
 
+        // 🔧 月亮碎星：无视星星是否被标记过（但每颗只加一次分）
         function moonChain(moonObj){
-            let stars=objects.filter(o=>o!==moonObj && o.type==='star' && !o.marked);
-            let cnt=Math.min(3,stars.length);
-            for(let i=0;i<cnt;i++){ 
-                if(!stars[i].marked) score += 10;
-                stars[i].marked = true; 
-                shatterStar(stars[i].x, stars[i].y); 
+            let stars = objects.filter(o => o !== moonObj && o.type === 'star');
+            let cnt = Math.min(3, stars.length);
+            for(let i = 0; i < cnt; i++){
+                let star = stars[i];
+                if(!star.marked) score += 10;
+                star.marked = true;
+                shatterStar(star.x, star.y);
             }
             updateUI();
         }
+
         function sliceObject(obj){
             if(obj.marked) return;
             obj.marked=true; shatterStar(obj.x,obj.y);
@@ -126,7 +126,7 @@
         function flushSwipe(){ for(let i=0;i<swipePoints.length-1;i++) checkSliceSegment(swipePoints[i].x,swipePoints[i].y,swipePoints[i+1].x,swipePoints[i+1].y); }
 
         function drawObject(obj){
-            if(obj.marked) return;  // ✅ 不绘制已标记的物体
+            if(obj.marked) return;
             let img=(obj.type==='star'?starImg:(obj.type==='moon'?moonImg:meteorImg));
             let s=(obj.type==='star'?obj.scale:1.0);
             let w=obj.radius*2*s, h=obj.radius*2*s;
