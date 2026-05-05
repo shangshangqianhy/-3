@@ -88,7 +88,7 @@
                 if(o.type==='star' && o.scale<0.99) o.scale += 0.025;
                 if(o.type==='star') o.angle += o.rotSpeed;
             }
-            objects = objects.filter(o=>!o.marked && o.y+o.radius>-100 && o.x+o.radius>-120 && o.x-o.radius<width+120);
+            objects = objects.filter(o=>! o.y+o.radius>-100 && o.x+o.radius>-120 && o.x-o.radius<width+120);
         }
 
         function trySpawn(now){ if(!gameActive) return; let delay=500/Math.max(0.65,globalSpeed); if(now-lastSpawn>delay){ objects.push(createRandomObject()); lastSpawn=now; if(objects.length<14 && Math.random()<0.28) objects.push(createRandomObject()); } }
