@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>捕梦网 </title>
+    <style>
+        * { user-select: none; -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { background: #0a0f1f; display: flex; justify-content: center; align-items: center; min-height: 100vh; font-family: monospace; margin: 0; padding: 16px; touch-action: none; }
+        .game-container { position: relative; max-width: 600px; width: 100%; background: #050a15; border-radius: 56px; padding: 20px 16px 24px; background-image: url('bg.png'); background-size: cover; background-position: center; }
+        canvas { display: block; width: 100%; aspect-ratio: 1 / 1; background: rgba(0,0,0,0.3); border-radius: 32px; cursor: crosshair; touch-action: none; box-shadow: 0 0 0 2px #3e4a6b; }
+        .top-stats { display: flex; justify-content: space-between; margin-bottom: 14px; padding: 0 12px; }
+        .stat-card { background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 60px; padding: 4px 18px; color: #ffefcf; border: 1px solid #c0c0c0; display: flex; align-items: baseline; gap: 10px; }
+        .stat-number { font-size: 26px; color: #c0c0c0; }
+        .side-buttons { position: absolute; right: 18px; top: 100px; display: flex; flex-direction: column; gap: 14px; z-index: 10; }
+        .side-btn { background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border: 1px solid #ffd58c; border-radius: 48px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .side-img { width: 36px; height: 36px; }
+        .center-overlay { position: absolute; top: 45%; left: 0; right: 0; display: flex; justify-content: center; z-index: 20; pointer-events: none; }
+        .center-btn { background: #2e3a4e; backdrop-filter: blur(12px); border: 2px solid #ffda88; border-radius: 60px; padding: 12px 28px; font-size: 24px; font-weight: bold; color: #ffefcf; cursor: pointer; pointer-events: auto; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="top-stats">
+        <div class="stat-card">时间 <span class="stat-number" id="timerValue">45</span></div>
+        <div class="stat-card">✨得分 <span class="stat-number" id="scoreValue">0</span></div>
+    </div>
+    <canvas id="gameCanvas" width="560" height="560"></canvas>
+    <div class="side-buttons">
+        <div class="side-btn" id="pauseBtn"><img class="side-img" id="pauseImg" src="pause.png"></div>
+        <div class="side-btn" id="speedUpBtn"><img class="side-img" src="fast.png"></div>
+        <div class="side-btn" id="speedDownBtn"><img class="side-img" src="slow.png"></div>
+    </div>
+    <div id="startOverlay" class="center-overlay"><div class="center-btn" id="startBtn">🌙 开始游戏</div></div>
+    <div id="restartOverlay" class="center-overlay hidden"><div class="center-btn" id="centerRestartBtn">🌙 重新开始</div></div>
+</div>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = 560, height = 560;
+        canvas.width = width; canvas.height = height;
+
+        const starImg = new Image(); starImg.src = "star.png";
+        const moonImg = new Image(); moonImg.src = "moon.png";
+        const meteorImg = new Image(); meteorImg.src = "meteor.png";
+
+        // 星星碎屑
+        let starShards = [];
+        function shatterStar(x,y){ for(let i=0;i<24;i++) starShards.push({ x:x+(Math.random()-0.5)*22, y:y+(Math.random()-0.5)*22, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5-1, life:0.7+Math.random()*0.4, size:2+Math.random()*5 }); }
+        function updateShards(){ for(let i=0;i<starShards.length;i++){ starShards[i].x+=starShards[i].vx; starShards[i].y+=starShards[i].vy; starShards[i].life-=0.028; if(starShards[i].life<=0){ starShards.splice(i,1); i--; } } }
+        function drawShards(){ for(let s of starShards){ ctx.globalAlpha=s.life; ctx.fillStyle=`hsl(48, 100%, 65%)`; ctx.beginPath(); ctx.arc(s.x,s.y,s.size*0.7,0,Math.PI*2); ctx.fill(); } ctx.globalAlpha=1; }
+
+  
+
+        let objects = [], lastSpawn=0, globalSpeed=1.0, gameActive=false, paused=false, score=0, timeLeft=45;
+        let swipePoints=[], isDragging=false, animId=null, timerInt=null;
+
+        function randomType(){ let r=Math.random()*100; if(r<72) return 'star'; if(r<82) return 'moon'; return 'meteor'; }
+        function createRandomObject(){
+            let type=randomType();
+            let rad=(type==='moon'?30:27);
+            let x,y,vx,vy, gravity=0;
+            if(type==='meteor'){
+                let side=Math.floor(Math.random()*4);
+                if(side===0){ x=-20; y=20+Math.random()*(height-40); vx=2.2+Math.random()*1.5; vy=(Math.random()-0.5)*1.2; }
+                else if(side===1){ x=width+20; y=20+Math.random()*(height-40); vx=-2.2-Math.random()*1.5; vy=(Math.random()-0.5)*1.2; }
+                else if(side===2){ x=20+Math.random()*(width-40); y=-30; vx=(Math.random()-0.5)*1.5; vy=1.8+Math.random()*1.2; }
+                else { x=20+Math.random()*(width-40); y=height+30; vx=(Math.random()-0.5)*1.2; vy=-1.5-Math.random()*1.2; }
+            } else {
+                x=40+Math.random()*(width-80);
+                y=height+15+Math.random()*30;
+                vx=(Math.random()-0.5)*0.7;
+                vy = -10.5 - Math.random()*3.0;   // 初速度向上更快
+                gravity = 0.18;                  // 重力加速度
+            }
+            return { type,x,y,vx,vy,radius:rad,marked:false, gravity, scale:(type==='star'?0.3+Math.random()*0.2:1.0), angle:0, rotSpeed:(type==='star'?0.03:0) };
+        }
+
+        function updatePhysics(delta){
+            let factor=Math.min(1.2, delta/16) * globalSpeed;
+            for(let o of objects){
+                if(o.gravity) o.vy += o.gravity * factor;
+                o.x += o.vx * factor;
+                o.y += o.vy * factor;
+                if(o.type==='star' && o.scale<0.99) o.scale += 0.025;
+                if(o.type==='star') o.angle += o.rotSpeed;
+            }
+            objects = objects.filter(o=>!o.marked && o.y+o.radius>-100 && o.x+o.radius>-120 && o.x-o.radius<width+120);
+        }
+
+        function trySpawn(now){ if(!gameActive) return; let delay=500/Math.max(0.65,globalSpeed); if(now-lastSpawn>delay){ objects.push(createRandomObject()); lastSpawn=now; if(objects.length<14 && Math.random()<0.28) objects.push(createRandomObject()); } }
+
+        function moonChain(moonObj){
+            let stars=objects.filter(o=>o!==moonObj && o.type==='star' && !o.marked);
+            let cnt=Math.min(3,stars.length);
+            for(let i=0;i<cnt;i++){ stars[i].marked=true; shatterStar(stars[i].x,stars[i].y); score+=10; }
+            updateUI();
+        }
+        function sliceObject(obj){
+            if(obj.marked) return;
+            obj.marked=true; shatterStar(obj.x,obj.y);
+            if(obj.type==='star') score+=10;
+            else if(obj.type==='moon'){ score+=50; moonChain(obj); }
+            else{ score-=20; timeLeft=Math.max(0,timeLeft-3); updateUI(); if(timeLeft<=0) endGame(); }
+            updateUI();
+        }
+        function checkSliceSegment(ax,ay,bx,by){
+            for(let o of objects){
+                if(o.marked) continue;
+                let dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+                if(len2<1e-5) continue;
+                let t=((o.x-ax)*dx+(o.y-ay)*dy)/len2;
+                t=Math.min(1,Math.max(0,t));
+                let cx=ax+t*dx, cy=ay+t*dy;
+                if(((o.x-cx)**2+(o.y-cy)**2)<o.radius*o.radius) sliceObject(o);
+            }
+        }
+        function flushSwipe(){ for(let i=0;i<swipePoints.length-1;i++) checkSliceSegment(swipePoints[i].x,swipePoints[i].y,swipePoints[i+1].x,swipePoints[i+1].y); }
+
+        function drawObject(obj){
+            let img=(obj.type==='star'?starImg:(obj.type==='moon'?moonImg:meteorImg));
+            let s=(obj.type==='star'?obj.scale:1.0);
+            let w=obj.radius*2*s, h=obj.radius*2*s;
+            ctx.save(); ctx.translate(obj.x,obj.y);
+            if(obj.type==='star') ctx.rotate(obj.angle);
+            if(img.complete && img.naturalWidth>0) ctx.drawImage(img,-w/2,-h/2,w,h);
+            ctx.restore();
+        }
+        function drawAll(){
+            ctx.clearRect(0,0,width,height);
+            for(let o of objects) if(!o.marked) drawObject(o);
+            drawShards(); 
+            if(swipePoints.length>=2){
+                ctx.beginPath(); ctx.lineWidth=3; ctx.lineCap='round';
+                for(let i=0;i<swipePoints.length-1;i++){ ctx.moveTo(swipePoints[i].x,swipePoints[i].y); ctx.lineTo(swipePoints[i+1].x,swipePoints[i+1].y); }
+                ctx.strokeStyle="rgba(255,255,240,0.7)"; ctx.stroke();
+            }
+            if(!gameActive || paused){
+                ctx.fillStyle="rgba(255,255,255,0.3)"; ctx.fillRect(0,0,width,height);
+                if(!gameActive){ ctx.fillStyle="#ffffff"; ctx.font="28px monospace"; ctx.fillText("✨ 游戏暂停 ✨",width/2-110,height/2); }
+                else if(paused){ ctx.fillStyle="#ffffff"; ctx.fillText("⏸游戏暂停",width/2-70,height/2); }
+            }
+        }
+
+        let lastFrame=0;
+        function animate(now){
+            if(!gameActive && !paused){ drawAll(); requestAnimationFrame(animate); return; }
+            if(!paused && gameActive){
+                let delta=Math.min(60, now-lastFrame);
+                if(delta>0){ updatePhysics(delta); trySpawn(now); }
+            }
+            lastFrame=now;
+            updateShards();
+            drawAll();
+            animId=requestAnimationFrame(animate);
+        }
+
+        function initGame(){ objects=[]; for(let i=0;i<5;i++) objects.push(createRandomObject()); }
+        function updateUI(){ document.getElementById('scoreValue').innerText=Math.floor(score); document.getElementById('timerValue').innerText=Math.max(0,Math.floor(timeLeft)); }
+        function endGame(){ if(!gameActive) return; gameActive=false; paused=false; if(timerInt) clearInterval(timerInt); document.getElementById('startOverlay').classList.add('hidden'); document.getElementById('restartOverlay').classList.remove('hidden'); }
+        function startGame(){
+            if(gameActive) return;
+            score=0; timeLeft=45; gameActive=true; paused=false; globalSpeed=1.0;
+            updateUI(); initGame(); lastSpawn=performance.now(); lastFrame=0;
+            swipePoints=[]; isDragging=false; starShards=[];
+            document.getElementById('pauseImg').src="pause.png";
+            document.getElementById('startOverlay').classList.add('hidden');
+            document.getElementById('restartOverlay').classList.add('hidden');
+            if(timerInt) clearInterval(timerInt);
+            timerInt=setInterval(()=>{ if(!gameActive||paused) return; if(timeLeft>0){ timeLeft--; updateUI(); if(timeLeft<=0) endGame(); } },1000);
+        }
+        function restartFromEnd(){ startGame(); }
+        function togglePause(){ if(!gameActive) return; paused=!paused; let pimg=document.getElementById('pauseImg'); if(pimg) pimg.src=paused?"play.png":"pause.png"; drawAll(); }
+        function adjustSpeed(delta){ if(!gameActive) return; globalSpeed=Math.min(1.5,Math.max(0.7,globalSpeed+delta)); }
+
+        function getCanvasPos(e){ let rect=canvas.getBoundingClientRect(); let sx=canvas.width/rect.width, sy=canvas.height/rect.height; let cx=e.touches?e.touches[0].clientX:e.clientX, cy=e.touches?e.touches[0].clientY:e.clientY; let x=(cx-rect.left)*sx, y=(cy-rect.top)*sy; return {x:Math.min(width,Math.max(0,x)), y:Math.min(height,Math.max(0,y))}; }
+        function onStart(e){ e.preventDefault(); if(!gameActive||paused) return; isDragging=true; swipePoints=[getCanvasPos(e)]; }
+        function onMove(e){ if(!isDragging||!gameActive||paused) return; e.preventDefault(); let p=getCanvasPos(e); if(Math.hypot(swipePoints[swipePoints.length-1].x-p.x, swipePoints[swipePoints.length-1].y-p.y)>5){ swipePoints.push(p); if(swipePoints.length>=2) checkSliceSegment(swipePoints[swipePoints.length-2].x, swipePoints[swipePoints.length-2].y, swipePoints[swipePoints.length-1].x, swipePoints[swipePoints.length-1].y); } drawAll(); }
+        function onEnd(e){ if(!gameActive||paused){ isDragging=false; swipePoints=[]; drawAll(); return; } e.preventDefault(); if(swipePoints.length>=2) flushSwipe(); isDragging=false; swipePoints=[]; drawAll(); }
+        
+        canvas.addEventListener('touchstart',onStart,{passive:false}); canvas.addEventListener('touchmove',onMove,{passive:false}); canvas.addEventListener('touchend',onEnd);
+        canvas.addEventListener('mousedown',onStart); window.addEventListener('mousemove',(e)=>{ if(isDragging) onMove(e); }); window.addEventListener('mouseup',onEnd);
+        document.getElementById('speedUpBtn').onclick=()=>adjustSpeed(0.15);
+        document.getElementById('speedDownBtn').onclick=()=>adjustSpeed(-0.15);
+        document.getElementById('pauseBtn').onclick=togglePause;
+        document.getElementById('startBtn').onclick=startGame;
+        document.getElementById('centerRestartBtn').onclick=restartFromEnd;
+
+        updateUI();
+        animId=requestAnimationFrame(animate);
+    })();
+</script>
+</body>
+</html>
