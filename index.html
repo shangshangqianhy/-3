@@ -28,9 +28,9 @@
     </div>
     <canvas id="gameCanvas" width="560" height="560"></canvas>
     <div class="side-buttons">
-        <div class="side-btn" id="pauseBtn"><img class="side-img" id="pauseImg" src="pause.png"></div>
-        <div class="side-btn" id="speedUpBtn"><img class="side-img" src="fast.png"></div>
-        <div class="side-btn" id="speedDownBtn"><img class="side-img" src="slow.png"></div>
+        <div class="side-btn" id="pauseBtn">< img class="side-img" id="pauseImg" src="pause.png"></div>
+        <div class="side-btn" id="speedUpBtn">< img class="side-img" src="fast.png"></div>
+        <div class="side-btn" id="speedDownBtn">< img class="side-img" src="slow.png"></div>
     </div>
     <div id="startOverlay" class="center-overlay"><div class="center-btn" id="startBtn">🌙 开始游戏</div></div>
     <div id="restartOverlay" class="center-overlay hidden"><div class="center-btn" id="centerRestartBtn">🌙 重新开始</div></div>
@@ -88,15 +88,20 @@
                 if(o.type==='star' && o.scale<0.99) o.scale += 0.025;
                 if(o.type==='star') o.angle += o.rotSpeed;
             }
-            objects = objects.filter(o=>! o.y+o.radius>-100 && o.x+o.radius>-120 && o.x-o.radius<width+120);
+            // ✅ 修复：只移除超出边界的物体，被标记的星星不移除（让特效播完）
+            objects = objects.filter(o => o.y + o.radius > -100 && o.x + o.radius > -120 && o.x - o.radius < width + 120);
         }
 
         function trySpawn(now){ if(!gameActive) return; let delay=500/Math.max(0.65,globalSpeed); if(now-lastSpawn>delay){ objects.push(createRandomObject()); lastSpawn=now; if(objects.length<14 && Math.random()<0.28) objects.push(createRandomObject()); } }
 
         function moonChain(moonObj){
-            let stars=objects.filter(o=>o!==moonObj && o.type==='star' );
+            let stars=objects.filter(o=>o!==moonObj && o.type==='star' && !o.marked);
             let cnt=Math.min(3,stars.length);
-            for(let i=0;i<cnt;i++){ if(!stars[i].marked)score+=10;stars[i].marked=true; shatterStar(stars[i].x,stars[i].y); }
+            for(let i=0;i<cnt;i++){ 
+                if(!stars[i].marked) score += 10;
+                stars[i].marked = true; 
+                shatterStar(stars[i].x, stars[i].y); 
+            }
             updateUI();
         }
         function sliceObject(obj){
@@ -121,6 +126,7 @@
         function flushSwipe(){ for(let i=0;i<swipePoints.length-1;i++) checkSliceSegment(swipePoints[i].x,swipePoints[i].y,swipePoints[i+1].x,swipePoints[i+1].y); }
 
         function drawObject(obj){
+            if(obj.marked) return;  // ✅ 不绘制已标记的物体
             let img=(obj.type==='star'?starImg:(obj.type==='moon'?moonImg:meteorImg));
             let s=(obj.type==='star'?obj.scale:1.0);
             let w=obj.radius*2*s, h=obj.radius*2*s;
@@ -131,7 +137,7 @@
         }
         function drawAll(){
             ctx.clearRect(0,0,width,height);
-            for(let o of objects) if(!o.marked) drawObject(o);
+            for(let o of objects) drawObject(o);
             drawShards(); 
             if(swipePoints.length>=2){
                 ctx.beginPath(); ctx.lineWidth=3; ctx.lineCap='round';
